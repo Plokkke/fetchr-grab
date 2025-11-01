@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "1fichier Side Downloader",
+  "version": "1.0",
+  "description": "Extension pour détecter et envoyer des liens de 1fichier à Side Downloader",
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_icon": "icon.png",
+    "default_title": "1fichier Side Downloader",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html"
+}

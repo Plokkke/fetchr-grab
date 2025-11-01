@@ -1,0 +1,244 @@
+/* Popup styles - Simple et efficace */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    width: 400px; /* Largeur augmentée pour mieux gérer les titres longs */
+    margin: 0;
+    padding: 16px;
+    background: #f5f5f5;
+}
+
+h1 {
+    margin: 16px 0 12px 0;
+    font-size: 18px;
+    color: #333;
+    border-bottom: 2px solid #4285f4;
+    padding-bottom: 8px;
+}
+
+#app {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Section des liens */
+.link-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    margin-bottom: 8px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fafafa;
+    transition: all 0.2s ease;
+}
+
+.link-item:hover {
+    background: #f0f0f0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.link-item span {
+    flex: 1;
+    margin-right: 12px;
+    font-size: 14px;
+    color: #333;
+
+    /* Gestion des titres longs avec ellipsis */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 280px; /* Limite pour laisser de la place au bouton */
+}
+
+.link-item button {
+    background-color: #4285f4;
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+    white-space: nowrap;
+}
+
+.link-item button:hover:not(:disabled) {
+    background-color: #3367d6;
+}
+
+.link-item button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+/* Section des téléchargements */
+.download-item {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    background: #fafafa;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.download-item:hover {
+    background: #f0f0f0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.download-item > div:first-child {
+    flex: 1;
+    min-width: 0; /* Important pour que l'ellipsis fonctionne */
+}
+
+/* Gestion des noms de fichiers longs dans les téléchargements */
+.download-name {
+    display: block;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 4px;
+
+    /* Ellipsis pour les titres longs */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 320px;
+}
+
+/* Bouton de suppression */
+.delete-button {
+    background: none;
+    border: 1px solid #e0e0e0;
+    cursor: pointer;
+    padding: 6px;
+    font-size: 16px;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+    border-radius: 4px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.delete-button:hover {
+    opacity: 1;
+    background-color: #ffebee;
+    border-color: #f44336;
+    transform: scale(1.05);
+}
+
+.delete-button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    transform: none;
+    background: none;
+}
+
+.delete-button svg {
+    width: 16px;
+    height: 16px;
+    color: #666;
+}
+
+.delete-button:hover svg {
+    color: #f44336;
+}
+
+/* Barre de progression */
+.progress-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: #e0e0e0;
+    border-radius: 0 0 6px 6px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4285f4, #34a853);
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+/* Messages d'état */
+#links:empty::after,
+#downloads:empty::after {
+    content: "Aucune donnée";
+    color: #999;
+    font-style: italic;
+    font-size: 14px;
+}
+
+/* Améliorations générales */
+button {
+    font-family: inherit;
+}
+
+/* Scrollbar personnalisée pour les longues listes */
+#links,
+#downloads {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+#links::-webkit-scrollbar,
+#downloads::-webkit-scrollbar {
+    width: 8px;
+}
+
+#links::-webkit-scrollbar-track,
+#downloads::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#links::-webkit-scrollbar-thumb,
+#downloads::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+#links::-webkit-scrollbar-thumb:hover,
+#downloads::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
