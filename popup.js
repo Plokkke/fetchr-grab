@@ -26,6 +26,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'WS_EVENT') {
       handleWsEvent(msg.eventType, msg.data);
+    } else if (msg.type === 'WS_LIST') {
+      downloadsState = msg.downloads ?? {};
+      renderDownloads();
     }
   });
 
@@ -154,6 +157,12 @@ function handleWsEvent(eventType, data) {
 
   if (eventType === 'download.removed') {
     delete downloadsState[data.id];
+    renderDownloads();
+    return;
+  }
+
+  if (eventType === 'download.started') {
+    downloadsState[data.id] = data;
     renderDownloads();
     return;
   }

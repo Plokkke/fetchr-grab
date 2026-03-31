@@ -1,6 +1,7 @@
 let ws = null;
 let downloads = new Map();
 let reconnectTimer = null;
+let pendingRequests = new Map();
 
 async function getConfig() {
   const { apiUrl, apiKey } = await chrome.storage.sync.get(['apiUrl', 'apiKey']);
@@ -15,24 +16,17 @@ function connectWebSocket(apiUrl) {
 
   ws.onopen = () => {
     console.log('[Fetchr Grab] WebSocket connected');
-    sendSubscribe();
+    wsSend({
+      type: 'subscribe',
+      topics: ['download.progress', 'download.completed', 'download.failed', 'download.removed'],
+    });
+    wsSend({ type: 'list' });
   };
-
-  function sendSubscribe() {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'subscribe',
-        topics: ['download.progress', 'download.completed', 'download.failed', 'download.removed']
-      }));
-    } else {
-      setTimeout(sendSubscribe, 100);
-    }
-  }
 
   ws.onmessage = (event) => {
     try {
-      const { event: eventType, data } = JSON.parse(event.data);
-      handleWsEvent(eventType, data);
+      const msg = JSON.parse(event.data);
+      handleWsMessage(msg);
     } catch (e) {
       console.warn('[Fetchr Grab] Invalid WS message', e);
     }
@@ -55,21 +49,62 @@ async function initWebSocket() {
   if (config) connectWebSocket(config.apiUrl);
 }
 
-function handleWsEvent(eventType, data) {
+function wsSend(data) {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
+
+function handleWsMessage({ event: eventType, data }) {
+  if (eventType === 'download.list') {
+    downloads.clear();
+    for (const dl of data) {
+      downloads.set(dl.id, dl);
+    }
+    broadcastToPopup('WS_LIST', { downloads: Object.fromEntries(downloads) });
+    return;
+  }
+
+  if (eventType === 'download.started') {
+    downloads.set(data.id, data);
+    const resolve = pendingRequests.get('download');
+    if (resolve) {
+      resolve(data);
+      pendingRequests.delete('download');
+    }
+    broadcastToPopup('WS_EVENT', { eventType, data });
+    return;
+  }
+
+  if (eventType === 'error') {
+    const resolve = pendingRequests.get('download');
+    if (resolve) {
+      resolve({ error: data.message });
+      pendingRequests.delete('download');
+    }
+    return;
+  }
+
   if (eventType === 'download.removed') {
     downloads.delete(data.id);
-  } else if (downloads.has(data.id)) {
-    const existing = downloads.get(data.id);
-    if (eventType === 'download.progress') {
-      downloads.set(data.id, { ...existing, ...data });
-    } else if (eventType === 'download.completed') {
-      downloads.set(data.id, { ...existing, ...data, status: 'completed' });
-    } else if (eventType === 'download.failed') {
-      downloads.set(data.id, { ...existing, ...data, status: 'failed' });
+  } else if (eventType === 'download.progress') {
+    if (!downloads.has(data.id)) return;
+    downloads.set(data.id, { ...downloads.get(data.id), ...data });
+  } else if (eventType === 'download.completed') {
+    if (downloads.has(data.id)) {
+      downloads.set(data.id, { ...downloads.get(data.id), ...data, status: 'completed' });
+    }
+  } else if (eventType === 'download.failed') {
+    if (downloads.has(data.id)) {
+      downloads.set(data.id, { ...downloads.get(data.id), ...data, status: 'failed' });
     }
   }
 
-  chrome.runtime.sendMessage({ type: 'WS_EVENT', eventType, data }).catch(() => {});
+  broadcastToPopup('WS_EVENT', { eventType, data });
+}
+
+function broadcastToPopup(type, payload) {
+  chrome.runtime.sendMessage({ type, ...payload }).catch(() => {});
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -79,74 +114,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'DOWNLOAD') {
-    handleDownload(msg.url).then(sendResponse).catch((e) => sendResponse({ error: e.message }));
+    const promise = new Promise((resolve) => {
+      pendingRequests.set('download', resolve);
+      wsSend({ type: 'download', url: msg.url });
+      setTimeout(() => {
+        if (pendingRequests.has('download')) {
+          pendingRequests.delete('download');
+          resolve({ error: 'Timeout waiting for download response' });
+        }
+      }, 10000);
+    });
+    promise.then(sendResponse);
     return true;
   }
 
   if (msg.type === 'CANCEL') {
-    handleCancel(msg.id).then(sendResponse).catch((e) => sendResponse({ error: e.message }));
+    wsSend({ type: 'cancel', id: msg.id });
+    downloads.delete(msg.id);
+    sendResponse({ success: true });
     return true;
   }
 
   if (msg.type === 'REMOVE') {
+    wsSend({ type: 'remove', id: msg.id });
     downloads.delete(msg.id);
     sendResponse({ success: true });
     return true;
   }
 
   if (msg.type === 'CLEAR_COMPLETED') {
-    handleClearCompleted().then(sendResponse).catch((e) => sendResponse({ error: e.message }));
+    wsSend({ type: 'clear' });
+    for (const [id, dl] of downloads) {
+      if (['completed', 'failed', 'cancelled'].includes(dl.status)) downloads.delete(id);
+    }
+    sendResponse({ success: true });
     return true;
   }
 });
-
-async function handleDownload(url) {
-  const config = await getConfig();
-  if (!config) throw new Error('Not configured');
-
-  const response = await fetch(`${config.apiUrl}/downloads`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': config.apiKey },
-    body: JSON.stringify({ url }),
-  });
-
-  if (!response.ok) throw new Error(`Download failed: ${response.statusText}`);
-  const data = await response.json();
-  downloads.set(data.id, data);
-  return data;
-}
-
-async function handleCancel(id) {
-  downloads.delete(id);
-
-  const config = await getConfig();
-  if (!config) throw new Error('Not configured');
-
-  await fetch(`${config.apiUrl}/downloads/${id}`, {
-    method: 'DELETE',
-    headers: { 'x-api-key': config.apiKey },
-  }).catch(() => {});
-
-  return { success: true };
-}
-
-async function handleClearCompleted() {
-  const config = await getConfig();
-  if (!config) throw new Error('Not configured');
-
-  const response = await fetch(`${config.apiUrl}/downloads/completed`, {
-    method: 'DELETE',
-    headers: { 'x-api-key': config.apiKey },
-  });
-
-  if (!response.ok) throw new Error(`Clear failed: ${response.statusText}`);
-
-  for (const [id, dl] of downloads) {
-    if (['completed', 'failed', 'cancelled'].includes(dl.status)) downloads.delete(id);
-  }
-
-  return await response.json();
-}
 
 initWebSocket();
 chrome.storage.onChanged.addListener(() => initWebSocket());
