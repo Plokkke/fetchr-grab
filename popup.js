@@ -1,293 +1,355 @@
-document.addEventListener('DOMContentLoaded', initDownloadsUpdater);
+const linksEl = document.getElementById('links');
+const downloadsEl = document.getElementById('downloads');
+const linkCountEl = document.getElementById('link-count');
+const downloadAllBtn = document.getElementById('download-all');
+const clearCompletedBtn = document.getElementById('clear-completed');
 
-const app = document.getElementById('app');
-const linksSection = document.getElementById('links');
-const downloadsSection = document.getElementById('downloads');
+let config = null;
+let hostPatterns = [];
+let detectedLinks = [];
+let downloadsState = {};
 
-let API_URL;
-let API_KEY;
-let previousLinks = new Set(); // Add state management for links
+// --- Init ---
 
-async function initDownloadsUpdater() {
-    try {
-        const { apiUrl, apiKey } = await getConfig();
-        if (!apiUrl || !apiKey) {
-            displayMessage(app, 'Please setup before use.');
-            return;
-        }
-        API_URL = apiUrl;
-        API_KEY = apiKey;
+document.addEventListener('DOMContentLoaded', async () => {
+  const stored = await chrome.storage.sync.get(['apiUrl', 'apiKey']);
+  if (!stored.apiUrl || !stored.apiKey) {
+    linksEl.innerHTML = '<p class="empty">Configure API URL and Key in options</p>';
+    return;
+  }
+  config = stored;
 
-        updateDownloads();
-        setInterval(updateDownloads, 3000);
+  await loadPlugins();
+  await scanPage();
+  await loadState();
 
-        linksDetection();
-        setInterval(linksDetection, 3000);
-    } catch (error) {
-        displayMessage(app, 'Error while fetching config: ' + error.message);
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'WS_EVENT') {
+      handleWsEvent(msg.eventType, msg.data);
     }
-}
+  });
 
+  downloadAllBtn.addEventListener('click', downloadAll);
+  clearCompletedBtn.addEventListener('click', clearCompleted);
+});
 
-function displayMessage(element, message) {
-    element.innerHTML = '';
-    element.textContent = message;
-}
+// --- Plugins & Link Detection ---
 
-function humanFileSize(size) {
-    const i = size === 0 ? 0 : Math.floor(Math.log(size) / Math.log(1024));
-    const value = parseFloat((size / Math.pow(1024, i)).toFixed(2));
-    const unit = ['B', 'KB', 'MB', 'GB', 'TB'][i];
-    return { value, unit };
-}
-
-function extractOneFichierId(url) {
-    const match = url.match(/\?([^&]+)/);
-    return match ? match[1] : null;
-}
-
-function getConfig() {
-    return new Promise((resolve, reject) => {
-        chrome.storage.sync.get(['apiUrl', 'apiKey'], items => {
-            if (chrome.runtime.lastError) {
-                return reject(chrome.runtime.lastError);
-            }
-            resolve(items);
-        });
+async function loadPlugins() {
+  try {
+    const response = await fetch(`${config.apiUrl}/downloads/plugins`, {
+      headers: { 'x-api-key': config.apiKey },
     });
+    const data = await response.json();
+    hostPatterns = data.hosts.map((h) => ({
+      name: h.name,
+      regex: new RegExp(h.urlPattern),
+    }));
+  } catch (e) {
+    console.error('[Fetchr Grab] Failed to load plugins', e);
+    linksEl.innerHTML = `<p class="empty">Failed to connect to Fetchr: ${e.message}</p>`;
+  }
 }
 
-async function updateDownloads() {
-    try {
-        const data = await fetchDownloads();
-        renderDownloads(data);
-    } catch (error) {
-        console.error('Error:', error);
-        displayMessage(downloadsSection, 'Error while fetching downloads. ' + JSON.stringify(error));
-    }
+async function scanPage() {
+  if (hostPatterns.length === 0) {
+    linksEl.innerHTML = '<p class="empty">No host plugins loaded</p>';
+    return;
+  }
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+
+  const patterns = hostPatterns.map((p) => p.regex.source);
+
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (patternsArr) => {
+      const regexes = patternsArr.map((p) => new RegExp(p));
+      const allLinks = [...document.querySelectorAll('a[href]')].map((a) => a.href);
+      const matched = allLinks.filter((href) => regexes.some((r) => r.test(href)));
+      return [...new Set(matched)];
+    },
+    args: [patterns],
+  });
+
+  detectedLinks = result?.result ?? [];
+  linkCountEl.textContent = detectedLinks.length;
+  if (detectedLinks.length === 0) {
+    linksEl.innerHTML = '<p class="empty">No links detected on this page</p>';
+    downloadAllBtn.style.display = 'none';
+    return;
+  }
+
+  downloadAllBtn.style.display = detectedLinks.length > 1 ? 'block' : 'none';
+  await renderLinks();
 }
 
-function executeInCurrentTab(func) {
-    return new Promise((resolve, reject) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (!tabs || !tabs.length) {
-                return reject(new Error('No active tab found'));
-            }
-            const tabId = tabs[0].id;
-
-            chrome.scripting.executeScript(
-                {
-                    target: { tabId },
-                    func
-                },
-                (results) => {
-                    if (chrome.runtime.lastError) {
-                        return reject(chrome.runtime.lastError);
-                    }
-                    if (!results || !results.length) {
-                        return reject(new Error('No result from executeScript'));
-                    }
-                    resolve(results[0].result || []);
-                }
-            );
-        });
-    });
-}
-
-
-async function linksDetection() {
-    let links = await executeInCurrentTab(() => {
-        const anchors = [...document.querySelectorAll('a[href*="1fichier"]')];
-        return anchors.map(a => a.href);
-    });
-
-    // Convert current links to Set for efficient comparison
-    const currentLinks = new Set(links);
-
-    // Check if there are any changes
-    const hasChanges = links.length !== previousLinks.size ||
-        links.some(link => !previousLinks.has(link));
-
-    if (hasChanges) {
-        renderLinks(links);
-        previousLinks = currentLinks;
-    }
-}
-
-async function fetchDownloads() {
-    const response = await fetch(`${API_URL}/downloads`, {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': API_KEY
-        }
-    });
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
-}
-
-async function download(url) {
-    const response = await fetch(`${API_URL}/downloads`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': API_KEY
-        },
-        body: JSON.stringify({ url })
-    });
-    if (!response.ok) {
-        let errorMessage = `HTTP error: ${response.status} - ${response.statusText}`;
-        try {
-            const errorData = await response.json();
-            errorMessage = errorData.message || errorMessage;
-        } catch (e) {
-            const errorText = await response.text();
-            if (errorText) errorMessage += `\n${errorText}`;
-        }
-        throw new Error(errorMessage);
-    }
-    return response.json();
-}
-
-async function fetchFileInfo(url) {
-    await new Promise(resolve => setTimeout(resolve, 3000)); // Ensure async context
-
-    const response = await fetch(`${API_URL}/infos?${new URLSearchParams({
-        url
-    })}`, {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': API_KEY
-        }
-    });
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
-}
-
-async function cancelDownload(id) {
-    const response = await fetch(`${API_URL}/downloads/${id}`, {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': API_KEY
-        }
-    });
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
-}
-
-function renderList(list, container, createItem) {
-    container.innerHTML = '';
-    if (!list || list.length === 0) {
-        displayMessage(container, 'No data.');
-        return;
-    }
-    list.forEach(item => {
-        container.appendChild(createItem(item));
-    });
-}
-
-function renderLinks(links) {
-    renderList(links, linksSection, createLinkItem);
-}
-
-function renderDownloads(downloads) {
-    renderList(downloads, downloadsSection, createDownloadItem);
-}
-
-function createLinkItem(link) {
-    const linkId = extractOneFichierId(link);
-    if (!linkId) return;
-
+async function renderLinks() {
+  linksEl.innerHTML = '';
+  for (const url of detectedLinks) {
     const item = document.createElement('div');
     item.className = 'link-item';
 
-    // Create a loading state
-    const fileNameSpan = document.createElement('span');
-    fileNameSpan.textContent = `ID: ${linkId} `;
-    fileNameSpan.title = `ID: ${linkId}`; // Tooltip au survol
-    item.appendChild(fileNameSpan);
-
-    // Fetch file info
-    fetchFileInfo(`https://1fichier.com/?${linkId}`)
-        .then(fileInfo => {
-            fileNameSpan.textContent = fileInfo.fileName || `ID: ${linkId} `;
-            fileNameSpan.title = fileInfo.fileName || `ID: ${linkId}`; // Update tooltip
-        }).catch();
+    const nameEl = document.createElement('span');
+    nameEl.className = 'link-name';
+    nameEl.textContent = extractFileName(url);
+    nameEl.title = url;
 
     const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-download';
     btn.textContent = 'Download';
-    btn.addEventListener('click', async () => {
-        btn.disabled = true;
-        try {
-            await download(`https://1fichier.com/?${linkId}`);
-            btn.textContent = 'Done';
-        } catch (error) {
-            btn.textContent = `Error`;
-            setTimeout(() => {
-                btn.textContent = 'Download';
-                btn.disabled = false;
-            }, 1500);
-        }
-    });
+    btn.onclick = () => downloadUrl(url, btn);
 
-    item.appendChild(btn);
-    return item;
+    item.append(nameEl, btn);
+    linksEl.appendChild(item);
+  }
+
+  // Fetch file infos in background for display
+  for (const url of detectedLinks) {
+    fetchFileInfo(url);
+  }
 }
 
-function createDownloadItem(download) {
-    const downloadItem = document.createElement('div');
-    downloadItem.className = 'download-item';
+async function fetchFileInfo(url) {
+  try {
+    const response = await fetch(`${config.apiUrl}/infos?url=${encodeURIComponent(url)}`, {
+      headers: { 'x-api-key': config.apiKey },
+    });
+    if (!response.ok) return;
+    const info = await response.json();
 
-    const contentDiv = document.createElement('div');
-    const { value: downloadedValue, unit: downloadedUnit } = humanFileSize(download.downloaded);
+    const items = linksEl.querySelectorAll('.link-item');
+    for (const item of items) {
+      const nameEl = item.querySelector('.link-name');
+      if (nameEl.textContent === extractFileName(url) && info.fileName) {
+        nameEl.textContent = info.fileName;
+        nameEl.title = info.fileName;
+        if (info.size) {
+          let sizeEl = item.querySelector('.link-size');
+          if (!sizeEl) {
+            sizeEl = document.createElement('span');
+            sizeEl.className = 'link-size';
+            item.insertBefore(sizeEl, item.querySelector('.btn'));
+          }
+          sizeEl.textContent = formatSize(info.size);
+        }
+      }
+    }
+  } catch (e) {
+    // silent fail for info fetch
+  }
+}
 
-    let content = `<strong class="download-name" title="${download.fileName}">${download.fileName}</strong><br>Status: ${download.status}<br>`;
+// --- Downloads ---
 
-    if (download.size) {
-        const { value: sizeValue, unit: sizeUnit } = humanFileSize(download.size);
-        const percent = ((download.downloaded / download.size) * 100).toFixed(2);
-        content += `Size: ${sizeValue} ${sizeUnit} - Progress: ${percent}%`;
+async function loadState() {
+  const response = await chrome.runtime.sendMessage({ type: 'GET_STATE' });
+  downloadsState = response?.downloads ?? {};
+  renderDownloads();
+}
 
-        // Add progress bar
-        const progressBar = document.createElement('div');
-        progressBar.className = 'progress-bar';
-        const progressFill = document.createElement('div');
-        progressFill.className = 'progress-fill';
-        progressFill.style.width = `${percent}%`;
-        progressBar.appendChild(progressFill);
-        downloadItem.appendChild(progressBar);
+function handleWsEvent(eventType, data) {
+  if (!data?.id) return;
+
+  if (eventType === 'download.removed') {
+    delete downloadsState[data.id];
+    renderDownloads();
+    return;
+  }
+
+  if (!downloadsState[data.id]) return;
+  downloadsState[data.id] = { ...downloadsState[data.id], ...data };
+  if (eventType === 'download.completed') downloadsState[data.id].status = 'completed';
+  if (eventType === 'download.failed') downloadsState[data.id].status = 'failed';
+  renderDownloads();
+}
+
+function renderDownloads() {
+  const entries = Object.values(downloadsState);
+  if (entries.length === 0) {
+    downloadsEl.innerHTML = '<p class="empty">No downloads</p>';
+    clearCompletedBtn.style.display = 'none';
+    return;
+  }
+
+  const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
+  const hasCompleted = entries.some((d) => TERMINAL_STATUSES.includes(d.status));
+  clearCompletedBtn.style.display = hasCompleted ? 'block' : 'none';
+
+  downloadsEl.innerHTML = '';
+  for (const dl of entries) {
+    downloadsEl.appendChild(createDownloadItem(dl));
+  }
+}
+
+function createDownloadItem(dl) {
+  const item = document.createElement('div');
+  item.className = 'download-item';
+
+  // Header: name + status + action button
+  const header = document.createElement('div');
+  header.className = 'download-header';
+
+  const name = document.createElement('span');
+  name.className = 'download-name';
+  name.textContent = dl.fileName || 'Resolving...';
+  name.title = dl.fileName || '';
+
+  const status = document.createElement('span');
+  status.className = `download-status status-${dl.status}`;
+  status.textContent = dl.status;
+
+  header.append(name, status);
+
+  // Action button
+  const terminalStatuses = ['completed', 'failed', 'cancelled'];
+  if (terminalStatuses.includes(dl.status)) {
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn btn-sm btn-remove';
+    removeBtn.textContent = '\u2715';
+    removeBtn.onclick = () => {
+      chrome.runtime.sendMessage({ type: 'REMOVE', id: dl.id });
+      delete downloadsState[dl.id];
+      renderDownloads();
+    };
+    header.appendChild(removeBtn);
+  } else if (dl.status === 'downloading' || dl.status === 'queued' || dl.status === 'resolving') {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-sm btn-danger';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = () => {
+      chrome.runtime.sendMessage({ type: 'CANCEL', id: dl.id });
+      delete downloadsState[dl.id];
+      renderDownloads();
+    };
+    header.appendChild(cancelBtn);
+  }
+
+  item.appendChild(header);
+
+  // Progress bar
+  if (['downloading', 'extracting', 'resolving', 'queued'].includes(dl.status)) {
+    const bar = document.createElement('div');
+    bar.className = 'progress-bar';
+
+    const fill = document.createElement('div');
+    fill.className = 'progress-fill';
+
+    if (dl.status === 'extracting' && dl.progress == null) {
+      fill.classList.add('indeterminate', 'extracting');
+    } else if (dl.status === 'extracting') {
+      fill.classList.add('extracting');
+      fill.style.width = `${(dl.progress ?? 0) * 100}%`;
+    } else if (dl.status === 'downloading') {
+      fill.classList.add('downloading');
+      fill.style.width = `${(dl.progress ?? 0) * 100}%`;
     } else {
-        content += `Downloaded: ${downloadedValue} ${downloadedUnit}`;
+      fill.classList.add('indeterminate', 'downloading');
     }
 
-    contentDiv.innerHTML = content;
-    downloadItem.appendChild(contentDiv);
+    bar.appendChild(fill);
+    item.appendChild(bar);
+  }
 
-    const deleteButton = document.createElement('button');
-    deleteButton.className = 'delete-button';
-    deleteButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
-    </svg>`;
-    deleteButton.title = 'Cancel download';
-    deleteButton.addEventListener('click', async () => {
-        try {
-            deleteButton.disabled = true;
-            await cancelDownload(download.id);
-            downloadItem.remove();
-        } catch (error) {
-            console.error('Error deleting download:', error);
-            deleteButton.disabled = false;
-        }
-    });
+  if (dl.status === 'completed') {
+    const bar = document.createElement('div');
+    bar.className = 'progress-bar';
+    const fill = document.createElement('div');
+    fill.className = 'progress-fill completed';
+    bar.appendChild(fill);
+    item.appendChild(bar);
+  }
 
-    downloadItem.appendChild(deleteButton);
-    return downloadItem;
+  // Details: speed + ETA or error
+  const details = document.createElement('div');
+  details.className = 'download-details';
+
+  if (dl.status === 'downloading') {
+    const speedEl = document.createElement('span');
+    speedEl.className = 'download-speed';
+    speedEl.textContent = dl.speed ? formatSpeed(dl.speed) : '';
+
+    const etaEl = document.createElement('span');
+    etaEl.className = 'download-eta';
+    etaEl.textContent = dl.eta ? `ETA ${formatEta(dl.eta)}` : '';
+
+    const pctEl = document.createElement('span');
+    pctEl.textContent = dl.progress != null ? `${Math.round(dl.progress * 100)}%` : '';
+
+    details.append(pctEl, speedEl, etaEl);
+  } else if (dl.status === 'extracting') {
+    const label = document.createElement('span');
+    label.textContent = dl.progress != null ? `Extracting ${Math.round(dl.progress * 100)}%` : 'Extracting...';
+    details.appendChild(label);
+  } else if (dl.status === 'failed' && dl.error) {
+    const errorEl = document.createElement('span');
+    errorEl.className = 'download-error';
+    errorEl.textContent = dl.error;
+    details.appendChild(errorEl);
+  }
+
+  if (details.children.length > 0) item.appendChild(details);
+  return item;
+}
+
+// --- Actions ---
+
+async function downloadUrl(url, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'DOWNLOAD', url });
+    if (result.error) throw new Error(result.error);
+    downloadsState[result.id] = result;
+    renderDownloads();
+    btn.textContent = '\u2713';
+    btn.classList.replace('btn-download', 'btn-secondary');
+  } catch (e) {
+    btn.textContent = '\u2717';
+    btn.classList.replace('btn-download', 'btn-danger');
+  }
+}
+
+async function downloadAll() {
+  const buttons = linksEl.querySelectorAll('.btn-download');
+  for (let i = 0; i < detectedLinks.length; i++) {
+    if (buttons[i]) await downloadUrl(detectedLinks[i], buttons[i]);
+  }
+}
+
+async function clearCompleted() {
+  await chrome.runtime.sendMessage({ type: 'CLEAR_COMPLETED' });
+  for (const [id, dl] of Object.entries(downloadsState)) {
+    if (dl.status === 'completed' || dl.status === 'failed') delete downloadsState[id];
+  }
+  renderDownloads();
+}
+
+// --- Formatters ---
+
+function extractFileName(url) {
+  const match = url.match(/\?([^&]+)/);
+  return match ? match[1] : url.split('/').pop() || url;
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatSpeed(bytesPerSec) {
+  if (bytesPerSec < 1024) return `${bytesPerSec} B/s`;
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+}
+
+function formatEta(seconds) {
+  if (seconds < 60) return '< 1m';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${h}h ${m}m`;
 }

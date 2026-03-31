@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "1fichier Side Downloader",
-  "version": "1.0",
-  "description": "Extension pour détecter et envoyer des liens de 1fichier à Side Downloader",
+  "name": "Fetchr Grab",
+  "version": "2.0",
+  "description": "Detect download links and send them to Fetchr",
   "permissions": [
     "storage",
     "scripting",
@@ -11,9 +11,12 @@
   "host_permissions": [
     "<all_urls>"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_icon": "icon.png",
-    "default_title": "1fichier Side Downloader",
+    "default_title": "Fetchr Grab",
     "default_popup": "popup.html"
   },
   "options_page": "options.html"

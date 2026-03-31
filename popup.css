@@ -1,244 +1,189 @@
-/* Popup styles - Simple et efficace */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    width: 400px; /* Largeur augmentée pour mieux gérer les titres longs */
-    margin: 0;
-    padding: 16px;
-    background: #f5f5f5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  width: 420px;
+  margin: 0;
+  padding: 0;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 13px;
 }
 
-h1 {
-    margin: 16px 0 12px 0;
-    font-size: 18px;
-    color: #333;
-    border-bottom: 2px solid #4285f4;
-    padding-bottom: 8px;
+#app { padding: 12px; }
+
+header h1 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: #7c8aff;
 }
 
-#app {
-    background: white;
-    border-radius: 8px;
-    padding: 16px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+h2 {
+  margin: 12px 0 8px;
+  font-size: 13px;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-/* Section des liens */
+.badge {
+  background: #333;
+  color: #aaa;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.empty {
+  color: #555;
+  font-style: italic;
+  margin: 8px 0;
+}
+
+/* Links */
 .link-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px;
-    margin-bottom: 8px;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    background: #fafafa;
-    transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #222;
 }
 
-.link-item:hover {
-    background: #f0f0f0;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+.link-item .link-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ccc;
+  font-size: 12px;
 }
 
-.link-item span {
-    flex: 1;
-    margin-right: 12px;
-    font-size: 14px;
-    color: #333;
-
-    /* Gestion des titres longs avec ellipsis */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 280px; /* Limite pour laisser de la place au bouton */
+.link-item .link-size {
+  color: #666;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
-.link-item button {
-    background-color: #4285f4;
-    color: white;
-    border: none;
-    padding: 6px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    transition: background-color 0.2s ease;
-    white-space: nowrap;
-}
-
-.link-item button:hover:not(:disabled) {
-    background-color: #3367d6;
-}
-
-.link-item button:disabled {
-    background-color: #cccccc;
-    cursor: not-allowed;
-}
-
-/* Section des téléchargements */
+/* Download items */
 .download-item {
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    padding: 12px;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-    background: #fafafa;
-    position: relative;
-    transition: all 0.2s ease;
+  padding: 8px 0;
+  border-bottom: 1px solid #222;
 }
 
-.download-item:hover {
-    background: #f0f0f0;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+.download-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
 }
 
-.download-item > div:first-child {
-    flex: 1;
-    min-width: 0; /* Important pour que l'ellipsis fonctionne */
-}
-
-/* Gestion des noms de fichiers longs dans les téléchargements */
 .download-name {
-    display: block;
-    font-weight: 600;
-    color: #333;
-    margin-bottom: 4px;
-
-    /* Ellipsis pour les titres longs */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 320px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
-/* Bouton de suppression */
-.delete-button {
-    background: none;
-    border: 1px solid #e0e0e0;
-    cursor: pointer;
-    padding: 6px;
-    font-size: 16px;
-    opacity: 0.7;
-    transition: all 0.2s ease;
-    border-radius: 4px;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+.download-status {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
 }
 
-.delete-button:hover {
-    opacity: 1;
-    background-color: #ffebee;
-    border-color: #f44336;
-    transform: scale(1.05);
-}
+.status-queued { background: #333; color: #888; }
+.status-resolving { background: #2a2a4a; color: #7c8aff; }
+.status-downloading { background: #1a3a2a; color: #4caf50; }
+.status-extracting { background: #3a2a1a; color: #ff9800; }
+.status-completed { background: #1a3a1a; color: #66bb6a; }
+.status-failed { background: #3a1a1a; color: #ef5350; }
+.status-cancelled { background: #2a2a2a; color: #888; }
 
-.delete-button:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-    transform: none;
-    background: none;
-}
-
-.delete-button svg {
-    width: 16px;
-    height: 16px;
-    color: #666;
-}
-
-.delete-button:hover svg {
-    color: #f44336;
-}
-
-/* Barre de progression */
+/* Progress bar */
 .progress-bar {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: #e0e0e0;
-    border-radius: 0 0 6px 6px;
-    overflow: hidden;
+  height: 4px;
+  background: #222;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 4px 0;
 }
 
 .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #4285f4, #34a853);
-    transition: width 0.3s ease;
-    position: relative;
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
 }
 
-.progress-fill::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 100%;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255, 255, 255, 0.3),
-        transparent
-    );
-    animation: shimmer 1.5s infinite;
+.progress-fill.downloading { background: #4caf50; }
+.progress-fill.extracting { background: #ff9800; }
+.progress-fill.completed { background: #66bb6a; width: 100% !important; }
+
+.progress-fill.indeterminate {
+  width: 100% !important;
+  background: linear-gradient(90deg, transparent, #ff9800 50%, transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
 }
 
 @keyframes shimmer {
-    0% {
-        transform: translateX(-100%);
-    }
-    100% {
-        transform: translateX(100%);
-    }
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
-/* Messages d'état */
-#links:empty::after,
-#downloads:empty::after {
-    content: "Aucune donnée";
-    color: #999;
-    font-style: italic;
-    font-size: 14px;
+/* Download details */
+.download-details {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #666;
+  margin-top: 2px;
 }
 
-/* Améliorations générales */
-button {
-    font-family: inherit;
+.download-speed { color: #4caf50; }
+.download-eta { color: #888; }
+.download-error { color: #ef5350; font-size: 11px; margin-top: 2px; }
+
+/* Buttons */
+.btn {
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  width: 100%;
+  margin-top: 8px;
 }
 
-/* Scrollbar personnalisée pour les longues listes */
-#links,
-#downloads {
-    max-height: 400px;
-    overflow-y: auto;
+.btn-primary { background: #7c8aff; color: #fff; }
+.btn-primary:hover { background: #6a78ee; }
+.btn-secondary { background: #333; color: #aaa; }
+.btn-secondary:hover { background: #444; }
+.btn-sm {
+  padding: 2px 8px;
+  font-size: 11px;
+  width: auto;
+  margin: 0;
+}
+.btn-download { background: #4caf50; color: #fff; }
+.btn-download:hover { background: #43a047; }
+.btn-danger { background: #ef5350; color: #fff; }
+.btn-danger:hover { background: #e53935; }
+.btn-remove { background: transparent; color: #666; border: 1px solid #333; }
+.btn-remove:hover { color: #ef5350; border-color: #ef5350; }
+
+/* Scrollable areas */
+#links, #downloads {
+  max-height: 250px;
+  overflow-y: auto;
 }
 
 #links::-webkit-scrollbar,
 #downloads::-webkit-scrollbar {
-    width: 8px;
-}
-
-#links::-webkit-scrollbar-track,
-#downloads::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 4px;
+  width: 4px;
 }
 
 #links::-webkit-scrollbar-thumb,
 #downloads::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 4px;
-}
-
-#links::-webkit-scrollbar-thumb:hover,
-#downloads::-webkit-scrollbar-thumb:hover {
-    background: #555;
+  background: #333;
+  border-radius: 2px;
 }

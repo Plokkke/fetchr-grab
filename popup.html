@@ -1,16 +1,26 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
-    <title>Darkiworld Downloader</title>
-    <link rel="stylesheet" href="popup.css">
+  <title>Fetchr Grab</title>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
 <div id="app">
+  <header>
+    <h1>Fetchr Grab</h1>
+  </header>
 
-<h1>Links</h1>
-<div id="links">Loading...</div>
-<h1>Downloads</h1>
-<div id="downloads">Loading...</div>
+  <section id="links-section">
+    <h2>Detected Links <span id="link-count" class="badge">0</span></h2>
+    <div id="links"><p class="empty">Scanning page...</p></div>
+    <button id="download-all" class="btn btn-primary" style="display:none">Download All</button>
+  </section>
+
+  <section id="downloads-section">
+    <h2>Downloads</h2>
+    <div id="downloads"><p class="empty">No downloads</p></div>
+    <button id="clear-completed" class="btn btn-secondary" style="display:none">Clear completed</button>
+  </section>
 </div>
 <script src="popup.js"></script>
 </body>
