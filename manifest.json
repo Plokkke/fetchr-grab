@@ -19,5 +19,12 @@
     "default_title": "Fetchr Grab",
     "default_popup": "popup.html"
   },
-  "options_page": "options.html"
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-darki.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }
