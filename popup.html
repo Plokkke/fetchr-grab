@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta charset="UTF-8">
   <title>Fetchr Grab</title>
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -14,6 +15,11 @@
 
   <section id="links-section">
     <h2>Detected Links <span id="link-count" class="badge">0</span></h2>
+    <div id="manual-paste">
+      <input id="manual-url" type="text" placeholder="Paste a link here..." />
+      <button id="manual-add" class="btn btn-sm btn-primary">Add</button>
+    </div>
+    <p id="manual-error" class="manual-error" style="display:none"></p>
     <div id="links"><p class="empty">Scanning page...</p></div>
     <button id="download-all" class="btn btn-primary" style="display:none">Download All</button>
   </section>

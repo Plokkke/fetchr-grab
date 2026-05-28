@@ -48,12 +48,61 @@ h2 {
 }
 
 .metadata-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   background: #2a2a4a;
   color: #7c8aff;
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 11px;
   font-family: monospace;
+  cursor: pointer;
+  user-select: none;
+}
+
+.metadata-tag input[type="checkbox"] {
+  margin: 0;
+  accent-color: #7c8aff;
+  cursor: pointer;
+}
+
+.metadata-tag.disabled {
+  background: #1f1f2e;
+  color: #555;
+  text-decoration: line-through;
+}
+
+/* Manual paste */
+#manual-paste {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+#manual-url {
+  flex: 1;
+  background: #0f0f1e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4a;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  outline: none;
+}
+
+#manual-url:focus {
+  border-color: #7c8aff;
+}
+
+#manual-paste .btn-sm {
+  flex-shrink: 0;
+}
+
+.manual-error {
+  color: #ef5350;
+  font-size: 11px;
+  margin: 0 0 6px;
 }
 
 /* Links */
@@ -116,6 +165,7 @@ h2 {
 
 .status-queued { background: #333; color: #888; }
 .status-resolving { background: #2a2a4a; color: #7c8aff; }
+.status-suspended { background: #3a2e1a; color: #ffc857; }
 .status-downloading { background: #1a3a2a; color: #4caf50; }
 .status-extracting { background: #3a2a1a; color: #ff9800; }
 .status-completed { background: #1a3a1a; color: #66bb6a; }
@@ -139,6 +189,7 @@ h2 {
 
 .progress-fill.downloading { background: #4caf50; }
 .progress-fill.extracting { background: #ff9800; }
+.progress-fill.suspended { background: #ffc857; width: 100% !important; opacity: 0.4; }
 .progress-fill.completed { background: #66bb6a; width: 100% !important; }
 
 .progress-fill.indeterminate {

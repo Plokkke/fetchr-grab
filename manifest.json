@@ -6,7 +6,9 @@
   "permissions": [
     "storage",
     "scripting",
-    "activeTab"
+    "activeTab",
+    "tabs",
+    "webNavigation"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -23,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content-darki.js"],
+      "js": ["lib/links.js", "content-detect.js", "content-darki.js"],
       "run_at": "document_idle"
     }
   ]

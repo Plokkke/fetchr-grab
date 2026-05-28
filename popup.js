@@ -4,14 +4,19 @@ const linkCountEl = document.getElementById('link-count');
 const metadataEl = document.getElementById('metadata');
 const downloadAllBtn = document.getElementById('download-all');
 const clearCompletedBtn = document.getElementById('clear-completed');
+const manualUrlEl = document.getElementById('manual-url');
+const manualAddBtn = document.getElementById('manual-add');
+const manualErrorEl = document.getElementById('manual-error');
 
 const CRN_FLIX_PARAMS = ['crn-flix-request-id', 'tmdbid', 'imdbid'];
 
 let config = null;
 let hostPatterns = [];
-let detectedLinks = [];
+let detectedLinks = []; // [{ url, fileName?, size?, error? }]
 let downloadsState = {};
 let pageMetadata = {};
+let activeMetadataKeys = new Set();
+let currentTabId = null;
 
 // --- Init ---
 
@@ -23,141 +28,148 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   config = stored;
 
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  currentTabId = tab?.id ?? null;
+  pageMetadata = extractPageMetadata(tab?.url);
+  activeMetadataKeys = new Set(Object.keys(pageMetadata));
+  renderMetadata();
+
   await loadPlugins();
-  await scanPage();
+  await loadLinks();
   await loadState();
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'WS_EVENT') {
-      handleWsEvent(msg.eventType, msg.data);
+      handleWsEvent(msg.topic, msg.data);
     } else if (msg.type === 'WS_LIST') {
       downloadsState = msg.downloads ?? {};
       renderDownloads();
+    } else if (msg.type === 'LINKS_UPDATED' && msg.tabId === currentTabId) {
+      detectedLinks = msg.links ?? [];
+      renderLinks();
     }
   });
 
   downloadAllBtn.addEventListener('click', downloadAll);
   clearCompletedBtn.addEventListener('click', clearCompleted);
+  manualAddBtn.addEventListener('click', addManualLink);
+  manualUrlEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addManualLink();
+  });
 });
 
 // --- Plugins & Link Detection ---
 
 async function loadPlugins() {
   try {
-    const response = await fetch(`${config.apiUrl}/downloads/plugins`, {
-      headers: { 'x-api-key': config.apiKey },
-    });
-    const data = await response.json();
+    const data = await chrome.runtime.sendMessage({ type: 'GET_PLUGINS' });
+    if (!data?.hosts) {
+      linksEl.innerHTML = '<p class="empty">Waiting for Fetchr connection…</p>';
+      return;
+    }
     hostPatterns = data.hosts.map((h) => ({
       name: h.name,
       regex: new RegExp(h.urlPattern),
     }));
   } catch (e) {
     console.error('[Fetchr Grab] Failed to load plugins', e);
-    linksEl.innerHTML = `<p class="empty">Failed to connect to Fetchr: ${e.message}</p>`;
+    linksEl.innerHTML = `<p class="empty">Failed to load plugins: ${e.message}</p>`;
   }
 }
 
-async function scanPage() {
-  if (hostPatterns.length === 0) {
-    linksEl.innerHTML = '<p class="empty">No host plugins loaded</p>';
-    return;
-  }
+async function loadLinks() {
+  if (currentTabId == null) return;
+  const response = await chrome.runtime.sendMessage({ type: 'GET_LINKS', tabId: currentTabId });
+  detectedLinks = response?.links ?? [];
+  renderLinks();
+}
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return;
-
-  pageMetadata = extractPageMetadata(tab.url);
-  renderMetadata();
-
-  const patterns = hostPatterns.map((p) => p.regex.source);
-
-  const [result] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: (patternsArr) => {
-      const regexes = patternsArr.map((p) => new RegExp(p));
-      const allLinks = [...document.querySelectorAll('a[href]')].map((a) => a.href);
-      const matched = allLinks.filter((href) => regexes.some((r) => r.test(href)));
-      return [...new Set(matched)];
-    },
-    args: [patterns],
-  });
-
-  detectedLinks = result?.result ?? [];
+function renderLinks() {
   linkCountEl.textContent = detectedLinks.length;
+
   if (detectedLinks.length === 0) {
     linksEl.innerHTML = '<p class="empty">No links detected on this page</p>';
     downloadAllBtn.style.display = 'none';
     return;
   }
-
   downloadAllBtn.style.display = detectedLinks.length > 1 ? 'block' : 'none';
-  await renderLinks();
-}
 
-async function renderLinks() {
-  linksEl.innerHTML = '';
-  for (const url of detectedLinks) {
-    const item = document.createElement('div');
-    item.className = 'link-item';
+  const byUrl = new Map();
+  for (const link of detectedLinks) byUrl.set(link.url, link);
 
-    const nameEl = document.createElement('span');
-    nameEl.className = 'link-name';
-    nameEl.textContent = extractFileName(url);
-    nameEl.title = url;
-
-    const actions = document.createElement('div');
-    actions.className = 'link-actions';
-
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-sm btn-download';
-    btn.textContent = 'Download';
-    btn.onclick = () => downloadUrl(url, btn);
-
-    const privateBtn = document.createElement('button');
-    privateBtn.className = 'btn btn-sm btn-private';
-    privateBtn.textContent = '\uD83E\uDEE5 Private';
-    privateBtn.onclick = () => downloadUrl(url, privateBtn, { private: 'true' });
-
-    actions.append(btn, privateBtn);
-    item.append(nameEl, actions);
-    linksEl.appendChild(item);
+  // Remove items no longer present
+  for (const node of [...linksEl.querySelectorAll('.link-item')]) {
+    if (!byUrl.has(node.dataset.url)) node.remove();
   }
+  // Clear empty placeholder
+  const empty = linksEl.querySelector('.empty');
+  if (empty) empty.remove();
 
-  // Fetch file infos in background for display
-  for (const url of detectedLinks) {
-    fetchFileInfo(url);
-  }
-}
-
-async function fetchFileInfo(url) {
-  try {
-    const response = await fetch(`${config.apiUrl}/infos?url=${encodeURIComponent(url)}`, {
-      headers: { 'x-api-key': config.apiKey },
-    });
-    if (!response.ok) return;
-    const info = await response.json();
-
-    const items = linksEl.querySelectorAll('.link-item');
-    for (const item of items) {
-      const nameEl = item.querySelector('.link-name');
-      if (nameEl.textContent === extractFileName(url) && info.fileName) {
-        nameEl.textContent = info.fileName;
-        nameEl.title = info.fileName;
-        if (info.size) {
-          let sizeEl = item.querySelector('.link-size');
-          if (!sizeEl) {
-            sizeEl = document.createElement('span');
-            sizeEl.className = 'link-size';
-            item.insertBefore(sizeEl, item.querySelector('.btn'));
-          }
-          sizeEl.textContent = formatSize(info.size);
-        }
-      }
+  for (const link of detectedLinks) {
+    let item = linksEl.querySelector(`.link-item[data-url="${cssEscape(link.url)}"]`);
+    if (!item) {
+      item = createLinkItem(link);
+      linksEl.appendChild(item);
+    } else {
+      updateLinkItem(item, link);
     }
-  } catch (e) {
-    // silent fail for info fetch
   }
+}
+
+function createLinkItem(link) {
+  const item = document.createElement('div');
+  item.className = 'link-item';
+  item.dataset.url = link.url;
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'link-name';
+  item.appendChild(nameEl);
+
+  const sizeEl = document.createElement('span');
+  sizeEl.className = 'link-size';
+  item.appendChild(sizeEl);
+
+  const actions = document.createElement('div');
+  actions.className = 'link-actions';
+
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-sm btn-download';
+  btn.textContent = 'Download';
+  btn.onclick = () => downloadUrl(link.url, btn);
+
+  const privateBtn = document.createElement('button');
+  privateBtn.className = 'btn btn-sm btn-private';
+  privateBtn.textContent = '🫥 Private';
+  privateBtn.onclick = () => downloadUrl(link.url, privateBtn, { private: 'true' });
+
+  actions.append(btn, privateBtn);
+  item.appendChild(actions);
+
+  updateLinkItem(item, link);
+  return item;
+}
+
+function updateLinkItem(item, link) {
+  const nameEl = item.querySelector('.link-name');
+  const sizeEl = item.querySelector('.link-size');
+  const displayName = link.fileName ?? fallbackName(link.url);
+  nameEl.textContent = displayName;
+  nameEl.title = link.error ? `${link.url}\n${link.error}` : link.url;
+  sizeEl.textContent = link.size != null ? formatSize(link.size) : '';
+}
+
+function fallbackName(url) {
+  try {
+    const u = new URL(url);
+    return u.pathname.split('/').filter(Boolean).pop() || u.host;
+  } catch {
+    return url;
+  }
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return window.CSS.escape(value);
+  return value.replace(/(["\\])/g, '\\$1');
 }
 
 // --- Downloads ---
@@ -168,16 +180,16 @@ async function loadState() {
   renderDownloads();
 }
 
-function handleWsEvent(eventType, data) {
+function handleWsEvent(topic, data) {
   if (!data?.id) return;
 
-  if (eventType === 'download.removed') {
+  if (topic === 'download::removed' || topic === 'download::canceled') {
     delete downloadsState[data.id];
     renderDownloads();
     return;
   }
 
-  if (eventType === 'download.started') {
+  if (topic === 'download::registered') {
     downloadsState[data.id] = data;
     renderDownloads();
     return;
@@ -185,8 +197,8 @@ function handleWsEvent(eventType, data) {
 
   if (!downloadsState[data.id]) return;
   downloadsState[data.id] = { ...downloadsState[data.id], ...data };
-  if (eventType === 'download.completed') downloadsState[data.id].status = 'completed';
-  if (eventType === 'download.failed') downloadsState[data.id].status = 'failed';
+  if (topic === 'download::completed') downloadsState[data.id].status = 'completed';
+  if (topic === 'download::failed') downloadsState[data.id].status = 'failed';
   renderDownloads();
 }
 
@@ -232,14 +244,14 @@ function createDownloadItem(dl) {
   if (terminalStatuses.includes(dl.status)) {
     const removeBtn = document.createElement('button');
     removeBtn.className = 'btn btn-sm btn-remove';
-    removeBtn.textContent = '\u2715';
+    removeBtn.textContent = '✕';
     removeBtn.onclick = () => {
       chrome.runtime.sendMessage({ type: 'REMOVE', id: dl.id });
       delete downloadsState[dl.id];
       renderDownloads();
     };
     header.appendChild(removeBtn);
-  } else if (dl.status === 'downloading' || dl.status === 'queued' || dl.status === 'resolving') {
+  } else if (['downloading', 'queued', 'resolving', 'suspended'].includes(dl.status)) {
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'btn btn-sm btn-danger';
     cancelBtn.textContent = 'Cancel';
@@ -254,7 +266,7 @@ function createDownloadItem(dl) {
   item.appendChild(header);
 
   // Progress bar
-  if (['downloading', 'extracting', 'resolving', 'queued'].includes(dl.status)) {
+  if (['downloading', 'extracting', 'resolving', 'queued', 'suspended'].includes(dl.status)) {
     const bar = document.createElement('div');
     bar.className = 'progress-bar';
 
@@ -269,6 +281,8 @@ function createDownloadItem(dl) {
     } else if (dl.status === 'downloading') {
       fill.classList.add('downloading');
       fill.style.width = `${(dl.progress ?? 0) * 100}%`;
+    } else if (dl.status === 'suspended') {
+      fill.classList.add('suspended');
     } else {
       fill.classList.add('indeterminate', 'downloading');
     }
@@ -307,6 +321,11 @@ function createDownloadItem(dl) {
     const label = document.createElement('span');
     label.textContent = dl.progress != null ? `Extracting ${Math.round(dl.progress * 100)}%` : 'Extracting...';
     details.appendChild(label);
+  } else if (dl.status === 'suspended') {
+    const label = document.createElement('span');
+    const sizeStr = dl.size ? ` — ${formatSize(dl.size)}` : '';
+    label.textContent = `Waiting for download slot${sizeStr}`;
+    details.appendChild(label);
   } else if (dl.status === 'failed' && dl.error) {
     const errorEl = document.createElement('span');
     errorEl.className = 'download-error';
@@ -318,30 +337,63 @@ function createDownloadItem(dl) {
   return item;
 }
 
+function addManualLink() {
+  manualErrorEl.style.display = 'none';
+  const raw = manualUrlEl.value.trim();
+  if (!raw) return;
+
+  try {
+    new URL(raw);
+  } catch {
+    showManualError('Invalid URL');
+    return;
+  }
+
+  if (detectedLinks.some((l) => l.url === raw)) {
+    showManualError('Link already in the list');
+    return;
+  }
+
+  manualUrlEl.value = '';
+  // Route through background so the link is cached, resolved, and persists.
+  chrome.runtime.sendMessage({ type: 'LINKS_DETECTED', urls: [raw], tabId: currentTabId }).catch(() => {});
+}
+
+function showManualError(msg) {
+  manualErrorEl.textContent = msg;
+  manualErrorEl.style.display = 'block';
+}
+
 // --- Actions ---
 
 async function downloadUrl(url, btn, metadata = {}) {
   btn.disabled = true;
   btn.textContent = '...';
   try {
-    const result = await chrome.runtime.sendMessage({ type: 'DOWNLOAD', url, metadata: { ...pageMetadata, ...metadata } });
+    const result = await chrome.runtime.sendMessage({
+      type: 'DOWNLOAD',
+      url,
+      metadata: { ...getActiveMetadata(), ...metadata },
+    });
     if (result.error) throw new Error(result.error);
     downloadsState[result.id] = result;
     renderDownloads();
-    btn.textContent = '\u2713';
+    btn.textContent = '✓';
     btn.classList.replace('btn-download', 'btn-secondary');
     btn.classList.replace('btn-private', 'btn-secondary');
   } catch (e) {
-    btn.textContent = '\u2717';
+    btn.textContent = '✗';
     btn.classList.replace('btn-download', 'btn-danger');
     btn.classList.replace('btn-private', 'btn-danger');
   }
 }
 
 async function downloadAll() {
-  const buttons = linksEl.querySelectorAll('.btn-download');
-  for (let i = 0; i < detectedLinks.length; i++) {
-    if (buttons[i]) await downloadUrl(detectedLinks[i], buttons[i]);
+  const items = [...linksEl.querySelectorAll('.link-item')];
+  for (const item of items) {
+    const url = item.dataset.url;
+    const btn = item.querySelector('.btn-download');
+    if (url && btn) await downloadUrl(url, btn);
   }
 }
 
@@ -357,6 +409,7 @@ async function clearCompleted() {
 
 function extractPageMetadata(tabUrl) {
   const metadata = {};
+  if (!tabUrl) return metadata;
   try {
     const url = new URL(tabUrl);
     for (const param of CRN_FLIX_PARAMS) {
@@ -380,22 +433,40 @@ function renderMetadata() {
     return;
   }
 
-  metadataEl.style.display = 'block';
+  metadataEl.style.display = 'flex';
   metadataEl.innerHTML = '';
   for (const [key, value] of entries) {
-    const tag = document.createElement('span');
-    tag.className = 'metadata-tag';
-    tag.textContent = `${key}: ${value}`;
-    metadataEl.appendChild(tag);
+    const label = document.createElement('label');
+    label.className = 'metadata-tag';
+    if (!activeMetadataKeys.has(key)) label.classList.add('disabled');
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = activeMetadataKeys.has(key);
+    checkbox.dataset.key = key;
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) activeMetadataKeys.add(key);
+      else activeMetadataKeys.delete(key);
+      label.classList.toggle('disabled', !checkbox.checked);
+    });
+
+    const text = document.createElement('span');
+    text.textContent = `${key}: ${value}`;
+
+    label.append(checkbox, text);
+    metadataEl.appendChild(label);
   }
 }
 
-// --- Formatters ---
-
-function extractFileName(url) {
-  const match = url.match(/\?([^&]+)/);
-  return match ? match[1] : url.split('/').pop() || url;
+function getActiveMetadata() {
+  const out = {};
+  for (const key of activeMetadataKeys) {
+    if (pageMetadata[key] != null) out[key] = pageMetadata[key];
+  }
+  return out;
 }
+
+// --- Formatters ---
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
