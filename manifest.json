@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fetchr Grab",
-  "version": "2.0",
+  "version": "2.4",
   "description": "Detect download links and send them to Fetchr",
   "permissions": [
     "storage",
@@ -25,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["lib/links.js", "content-detect.js", "content-darki.js"],
+      "js": ["lib/links.js", "content-detect.js"],
       "run_at": "document_idle"
     }
   ]

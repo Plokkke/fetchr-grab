@@ -10,6 +10,8 @@ body {
 
 #app { padding: 12px; }
 
+[hidden] { display: none !important; }
+
 header h1 {
   margin: 0 0 12px;
   font-size: 16px;
@@ -114,6 +116,7 @@ h2 {
 
 .link-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 6px 0;
@@ -170,7 +173,6 @@ h2 {
 .status-extracting { background: #3a2a1a; color: #ff9800; }
 .status-completed { background: #1a3a1a; color: #66bb6a; }
 .status-failed { background: #3a1a1a; color: #ef5350; }
-.status-cancelled { background: #2a2a2a; color: #888; }
 
 /* Progress bar */
 .progress-bar {
@@ -264,3 +266,61 @@ h2 {
   background: #333;
   border-radius: 2px;
 }
+
+/* Download metadata */
+.download-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.metadata-none { color: #555; font-size: 11px; font-style: italic; }
+
+.metadata-tag.readonly {
+  cursor: default;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.btn-edit { background: transparent; color: #7c8aff; border: 1px solid #2a2a4a; }
+.btn-edit:hover { border-color: #7c8aff; }
+
+.metadata-editor {
+  flex-basis: 100%;
+  margin-top: 6px;
+  padding: 6px;
+  background: #0f0f1e;
+  border: 1px solid #2a2a4a;
+  border-radius: 4px;
+}
+
+.metadata-rows { display: flex; flex-direction: column; gap: 4px; }
+
+.metadata-row { display: flex; gap: 4px; }
+
+.metadata-row input {
+  flex: 1;
+  min-width: 0;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border: 1px solid #2a2a4a;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: monospace;
+  outline: none;
+}
+
+.metadata-row input:focus { border-color: #7c8aff; }
+
+.metadata-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.metadata-actions .spacer { flex: 1; }
